@@ -9,10 +9,7 @@ dotenv.config();
 
 const program = new Command();
 
-program
-    .name('cli')
-    .description('GitHub Project CLI')
-    .version('1.0.0');
+program.name('cli').description('GitHub Project CLI').version('1.0.0');
 
 program.addCommand(fetchIssuesCommand);
 program.addCommand(fetchPRsCommand);

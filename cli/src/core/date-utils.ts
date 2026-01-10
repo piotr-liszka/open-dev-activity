@@ -6,14 +6,14 @@ dayjs.extend(relativeTime);
 dayjs.extend(duration);
 
 export const formatDate = (dateStr: string): string => {
-    return dayjs(dateStr).format('YYYY-MM-DD HH:mm:ss');
+  return dayjs(dateStr).format('YYYY-MM-DD HH:mm:ss');
 };
 
 export const getDuration = (ms: number): string => {
-    return dayjs.duration(ms).humanize();
+  return dayjs.duration(ms).humanize();
 };
 
 export const parseDateInput = (input?: string): dayjs.Dayjs => {
-    if (!input) return dayjs();
-    return dayjs(input);
+  if (!input) return dayjs();
+  return dayjs(input);
 };
