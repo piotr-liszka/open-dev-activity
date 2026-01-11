@@ -4,11 +4,12 @@ A powerful TypeScript CLI tool for analyzing GitHub repositories, projects, issu
 
 ## Features
 
-- 🔍 **Repository Analysis** - Comprehensive repository statistics and insights
+- 🔍 **Repository Analysis** - Analyze commits from local repositories and their forks
 - 📊 **Project Issues** - Fetch and analyze ProjectV2 items with status history
 - 🔀 **Pull Requests** - Detailed PR analysis with reviews and discussions
 - ⏱️ **Working Time Calculations** - Smart duration tracking considering working hours
 - 🔐 **Flexible Authentication** - Support for both personal tokens and GitHub Apps
+- 🗄️ **Database Persistence** - Store activities in PostgreSQL for querying and analysis
 
 ## Installation
 
@@ -30,6 +31,20 @@ export GITHUB_TOKEN=your_github_token
 export GITHUB_APP_ID=your_app_id
 export GITHUB_APP_INSTALLATION_ID=your_installation_id
 export GITHUB_APP_PRIVATE_KEY_PATH=/path/to/private-key.pem
+```
+
+### Database (Optional)
+For activity persistence, configure PostgreSQL:
+```bash
+# Option 1: Connection string
+export DATABASE_URL=postgresql://user:password@localhost:5432/dbname
+
+# Option 2: Individual parameters
+export POSTGRES_HOST=localhost
+export POSTGRES_PORT=5432
+export POSTGRES_USER=user
+export POSTGRES_PASSWORD=password
+export POSTGRES_DB=dbname
 ```
 
 ## Commands
@@ -74,7 +89,6 @@ pnpm cli analyse-repos --repo-directory /path/to/repo --non-interactive
   - Lines added (green) and deleted (red)
   - Commit message
   - Commit date
-
 
 ---
 
@@ -133,7 +147,7 @@ pnpm cli fetch-prs --owner <owner> --repo <repo> [options]
 ```bash
 pnpm cli fetch-prs --owner facebook --repo react
 pnpm cli fetch-prs --owner microsoft --repo vscode --from "24 hours ago"
-pnpm cli fetch-prs --owner myorg --myrepo --from 2026-01-01 --to 2026-01-07
+pnpm cli fetch-prs --owner myorg --repo myrepo --from 2026-01-01 --to 2026-01-07
 ```
 
 **Output includes:**
@@ -150,6 +164,78 @@ pnpm cli fetch-prs --owner myorg --myrepo --from 2026-01-01 --to 2026-01-07
 
 ---
 
+### 4. Database Migration
+
+Run database migrations to set up the schema for activity persistence.
+
+```bash
+pnpm cli db-migrate [options]
+```
+
+**Optional Options:**
+- `--check` - Only check database connectivity without running migrations
+
+**Example:**
+```bash
+# Run migrations
+pnpm cli db-migrate
+
+# Check database connectivity
+pnpm cli db-migrate --check
+```
+
+**Output includes:**
+- Migration status
+- Activities table schema
+- Database indexes
+
+---
+
+### 5. Query Activities
+
+Query stored activities from the database.
+
+```bash
+pnpm cli query-activities [options]
+```
+
+**Optional Options:**
+- `--author <string>` - Filter by author
+- `--repository <string>` - Filter by repository
+- `--type <string>` - Filter by activity type (commit, pr_created, pr_review, pr_comment, issue_status_change, issue_assignment, issue_labeling, issue_state_change)
+- `--from <date>` - Start date (YYYY-MM-DD)
+- `--to <date>` - End date (YYYY-MM-DD)
+- `--limit <number>` - Maximum number of results (default: 100)
+- `--offset <number>` - Skip first N results (default: 0)
+- `--count-only` - Only show count, not full results
+- `--format <string>` - Output format: json, table (default: json)
+
+**Example:**
+```bash
+# Query all activities
+pnpm cli query-activities
+
+# Filter by author
+pnpm cli query-activities --author "john@example.com"
+
+# Filter by type and date range
+pnpm cli query-activities --type commit --from 2026-01-01 --to 2026-01-07
+
+# Table format output
+pnpm cli query-activities --format table --limit 50
+
+# Count only
+pnpm cli query-activities --author "john@example.com" --count-only
+```
+
+**Output includes:**
+- Activity type, author, date
+- Repository and title
+- URL and description
+- Additional metadata (varies by activity type)
+
+---
+
 ## Working Time Calculations
 
 The CLI intelligently calculates durations considering:
@@ -162,14 +248,20 @@ This provides more accurate time tracking for project management and analysis.
 ## Development
 
 ```bash
-# Build the project
-pnpm build
+# Run CLI commands
+pnpm cli <command>
 
-# Run in development
-pnpm dev
+# Lint code
+pnpm lint
 
-# Run tests
-pnpm test
+# Format code
+pnpm format
+
+# Database operations (using Drizzle Kit)
+pnpm db:generate  # Generate migrations
+pnpm db:migrate   # Run migrations
+pnpm db:push      # Push schema changes
+pnpm db:studio    # Open Drizzle Studio
 ```
 
 ## Project Structure
@@ -178,15 +270,26 @@ pnpm test
 cli/
 ├── src/
 │   ├── commands/
-│   │   ├── analyze-repo.ts    # Repository analysis command
-│   │   ├── fetch-issues.ts    # ProjectV2 issues command
-│   │   └── fetch-prs.ts       # Pull requests command
-│   ├── auth.ts                # Authentication handling
-│   ├── github.ts              # GitHub API client
-│   ├── types.ts               # TypeScript type definitions
-│   ├── utils.ts               # Utility functions
-│   ├── working-time.ts        # Working time calculations
-│   └── index.ts               # CLI entry point
+│   │   ├── analyse-repos.ts     # Repository analysis command
+│   │   ├── db-migrate.ts        # Database migration command
+│   │   ├── fetch-issues.ts      # ProjectV2 issues command
+│   │   ├── fetch-prs.ts         # Pull requests command
+│   │   └── query-activities.ts  # Query activities command
+│   ├── core/
+│   │   ├── date-utils.ts        # Date parsing utilities
+│   │   ├── event-bus.ts         # Event bus for activity emission
+│   │   └── working-time.ts      # Working time calculations
+│   ├── infrastructure/
+│   │   ├── activity-handler.ts  # Activity event handler
+│   │   ├── activity-repository.ts # Activity database queries
+│   │   ├── database.ts          # Database connection
+│   │   └── schema.ts            # Drizzle ORM schema
+│   ├── auth.ts                  # Authentication handling
+│   ├── github.ts                # GitHub API client
+│   ├── logger.ts                # Logging utilities
+│   ├── types.ts                 # TypeScript type definitions
+│   └── index.ts                 # CLI entry point
+├── drizzle/                     # Database migrations
 └── package.json
 ```
 
