@@ -1,20 +1,42 @@
 import { Command } from 'commander';
 import chalk from 'chalk';
 import { GitHubClient } from '../github.js';
-import { formatDate } from '../core/date-utils.js';
-import type { ProjectV2Item, ProcessedIssue, StatusDuration, IssueHistoryItem } from '../types.js';
+import type {
+  ProjectV2Item,
+  ProcessedIssue,
+  StatusDuration,
+  IssueHistoryItem,
+  UserActivity,
+  ActivityType,
+} from '../types.js';
 import dayjs from 'dayjs';
 import { getGitHubToken } from '../auth.js';
-import { calculateWorkingTime, formatWorkingDuration } from '../core/working-time.js';
+import { calculateWorkingTime } from '../core/working-time.js';
+import { logInfo } from '../logger.js';
 
 export const fetchIssuesCommand = new Command('fetch-issues')
   .description('Fetch issues from a GitHub ProjectV2 with status history and details')
-  .requiredOption('--owner <string>', 'GitHub Organization or User')
-  .requiredOption('--project-number <number>', 'ProjectV2 Number')
-  .option('--from <date>', 'Start date (YYYY-MM-DD)', '24 hours ago')
-  .option('--to <date>', 'End date (YYYY-MM-DD)', 'now')
+  .option('--owner <string>', 'GitHub Organization or User', process.env.GITHUB_OWNER)
+  .option('--project-number <number>', 'ProjectV2 Number', process.env.PROJECT_NUMBER)
+  .option('--from <date>', 'Start date (YYYY-MM-DD)', process.env.DATE_FROM || '24 hours ago')
+  .option('--to <date>', 'End date (YYYY-MM-DD)', process.env.DATE_TO || 'now')
   .action(async (options) => {
     try {
+      if (!options.owner) {
+        console.error(
+          chalk.red('Error: Owner is required. Provide via --owner or GITHUB_OWNER env var.')
+        );
+        process.exit(1);
+      }
+      if (!options.projectNumber) {
+        console.error(
+          chalk.red(
+            'Error: Project number is required. Provide via --project-number or PROJECT_NUMBER env var.'
+          )
+        );
+        process.exit(1);
+      }
+
       const authResult = await getGitHubToken();
       if (!authResult) {
         console.error(chalk.red('Error: GITHUB_TOKEN or GitHub App credentials are required.'));
@@ -28,13 +50,13 @@ export const fetchIssuesCommand = new Command('fetch-issues')
       // This is useful for debugging permissions or knowing if we are a bot vs user
       const whoami = await client.getAuthenticatedUser();
 
-      console.log(
+      logInfo(
         chalk.gray(`Authenticated as: `) +
           chalk.whiteBright.bold(whoami) +
           chalk.gray(` (via ${method})`)
       );
 
-      console.log(
+      logInfo(
         chalk.blue(`Fetching issues for ${options.owner}/Project-${options.projectNumber}...`)
       );
 
@@ -47,7 +69,7 @@ export const fetchIssuesCommand = new Command('fetch-issues')
       }
       const toDate = options.to === 'now' ? dayjs() : dayjs(options.to);
 
-      console.log(
+      logInfo(
         chalk.gray(
           `Time Range: ${fromDate.format('YYYY-MM-DD HH:mm')} to ${toDate.format('YYYY-MM-DD HH:mm')}`
         )
@@ -65,12 +87,12 @@ export const fetchIssuesCommand = new Command('fetch-issues')
         projectNumber: options.projectNumber,
         filter,
         onProgress: (count) => {
-          process.stdout.write(chalk.dim(`\rFetched ${count} items...`));
+          process.stderr.write(chalk.dim(`\rFetched ${count} items...`));
         },
       });
-      console.log(''); // Newline after progress
+      logInfo(''); // Newline after progress
 
-      console.log(chalk.green(`Fetched ${items.length} items. Filtering...`));
+      logInfo(chalk.green(`Fetched ${items.length} items. Filtering...`));
 
       const processedItems: ProcessedIssue[] = items
         .map((item) => processItem(item, toDate))
@@ -81,41 +103,48 @@ export const fetchIssuesCommand = new Command('fetch-issues')
           return updated.isAfter(fromDate) && updated.isBefore(toDate);
         });
 
-      console.log(chalk.bold(`\nFound ${processedItems.length} items in the specified range:\n`));
+      logInfo(
+        chalk.bold(`\nFound ${processedItems.length} items/issues active in the specified range`)
+      );
 
-      processedItems.forEach((item) => {
-        console.log(
-          chalk.whiteBright.bold(`[${item.status}] `) + chalk.cyan(`#${item.number} ${item.title}`)
-        );
-        console.log(chalk.gray(`  Link: ${item.url}`));
-        console.log(chalk.gray(`  Updated: ${formatDate(item.updatedAt)}`));
-        console.log(chalk.gray(`  Assignees: ${item.assignees.join(', ') || 'None'}`));
-        console.log(chalk.gray(`  Labels: ${item.labels.join(', ') || 'None'}`));
+      const activities: UserActivity[] = [];
 
-        if (item.statusDurations.length > 0) {
-          console.log(chalk.yellow(`  Time spent in status:`));
-          item.statusDurations.forEach((sd) => {
-            console.log(`    ${sd.status}: ${chalk.white(formatWorkingDuration(sd.durationMs))}`);
+      for (const item of processedItems) {
+        // Find history events within date range
+        const validHistory = item.history.filter((event) => {
+          const eventTime = dayjs(event.when);
+          return eventTime.isAfter(fromDate) && eventTime.isBefore(toDate);
+        });
+
+        for (const event of validHistory) {
+          let type: ActivityType = 'unknown';
+          if (event.type === 'status') type = 'issue_status_change';
+          else if (event.type === 'label') type = 'issue_labeling';
+          else if (event.type === 'state_change') type = 'issue_state_change';
+          else if (event.type === 'assignment') type = 'issue_assignment';
+
+          activities.push({
+            type,
+            author: event.who,
+            date: event.when,
+            repository: `${options.owner}/Project-${options.projectNumber}`, // Best guess for Project items
+            title: item.title,
+            url: item.url,
+            description: `${event.action} ${event.value || ''}`.trim(),
+            meta: {
+              issueNumber: item.number,
+              action: event.action,
+              value: event.value,
+              durationMs: event.durationMs,
+            },
           });
         }
+      }
 
-        if (item.history.length > 0) {
-          console.log(chalk.yellow(`  History & Timeline:`));
-          // Sort history by time descending
-          const sortedHistory = [...item.history].sort(
-            (a, b) => new Date(b.when).getTime() - new Date(a.when).getTime()
-          );
+      // Sort by date
+      activities.sort((a, b) => dayjs(a.date).diff(dayjs(b.date)));
 
-          sortedHistory.forEach((event) => {
-            const time = formatDate(event.when);
-            const who = chalk.blue(event.who);
-            const action = chalk.bold(event.action);
-            const value = event.value ? ` ${chalk.white(event.value)}` : '';
-            console.log(`    ${chalk.gray(time)} - ${who} ${action}${value}`);
-          });
-        }
-        console.log('');
-      });
+      console.log(JSON.stringify(activities, null, 2));
     } catch (error: unknown) {
       const errorMessage = error instanceof Error ? error.message : 'Unknown error';
       console.error(chalk.red('Error execution failed:'), errorMessage);

@@ -1,20 +1,39 @@
 import { Command } from 'commander';
 import chalk from 'chalk';
 import { GitHubClient } from '../github.js';
-import { formatDate } from '../core/date-utils.js';
-import type { PullRequestInfo, ReviewInfo, CommentInfo } from '../types.js';
+import type {
+  PullRequestInfo,
+  ReviewInfo,
+  CommentInfo,
+  UserActivity,
+  PullRequestNode,
+} from '../types.js';
 import dayjs from 'dayjs';
 import { getGitHubToken } from '../auth.js';
-import { calculateWorkingTime, formatWorkingDuration } from '../core/working-time.js';
+import { calculateWorkingTime } from '../core/working-time.js';
+import { logInfo } from '../logger.js';
 
 export const fetchPRsCommand = new Command('fetch-prs')
   .description('Fetch and analyze pull requests from a GitHub repository')
-  .requiredOption('--owner <string>', 'GitHub Organization or User')
-  .requiredOption('--repo <string>', 'GitHub Repository Name')
-  .option('--from <date>', 'Start date (YYYY-MM-DD)', '7 days ago')
-  .option('--to <date>', 'End date (YYYY-MM-DD)', 'now')
+  .option('--owner <string>', 'GitHub Organization or User', process.env.GITHUB_OWNER)
+  .option('--repo <string>', 'GitHub Repository Name', process.env.GITHUB_REPO)
+  .option('--from <date>', 'Start date (YYYY-MM-DD)', process.env.DATE_FROM || '7 days ago')
+  .option('--to <date>', 'End date (YYYY-MM-DD)', process.env.DATE_TO || 'now')
   .action(async (options) => {
     try {
+      if (!options.owner) {
+        console.error(
+          chalk.red('Error: Owner is required. Provide via --owner or GITHUB_OWNER env var.')
+        );
+        process.exit(1);
+      }
+      if (!options.repo) {
+        console.error(
+          chalk.red('Error: Repository is required. Provide via --repo or GITHUB_REPO env var.')
+        );
+        process.exit(1);
+      }
+
       const authResult = await getGitHubToken();
       if (!authResult) {
         console.error(chalk.red('Error: GITHUB_TOKEN or GitHub App credentials are required.'));
@@ -25,12 +44,12 @@ export const fetchPRsCommand = new Command('fetch-prs')
       const client = new GitHubClient(token);
       const whoami = await client.getAuthenticatedUser();
 
-      console.log(
+      logInfo(
         chalk.gray(`Authenticated as: `) +
           chalk.whiteBright.bold(whoami) +
           chalk.gray(` (via ${method})`)
       );
-      console.log(chalk.blue(`Fetching PRs for ${options.owner}/${options.repo}...`));
+      logInfo(chalk.blue(`Fetching PRs for ${options.owner}/${options.repo}...`));
 
       // Parse dates
       let fromDate = dayjs(options.from);
@@ -41,7 +60,7 @@ export const fetchPRsCommand = new Command('fetch-prs')
       }
       const toDate = options.to === 'now' ? dayjs() : dayjs(options.to);
 
-      console.log(
+      logInfo(
         chalk.gray(
           `Time Range: ${fromDate.format('YYYY-MM-DD HH:mm')} to ${toDate.format('YYYY-MM-DD HH:mm')}`
         )
@@ -53,10 +72,10 @@ export const fetchPRsCommand = new Command('fetch-prs')
         from: fromDate.toISOString(),
         to: toDate.toISOString(),
         onProgress: (count) => {
-          process.stdout.write(chalk.dim(`\rFetched ${count} PRs...`));
+          process.stderr.write(chalk.dim(`\rFetched ${count} PRs...`));
         },
       });
-      console.log(''); // Newline after progress
+      logInfo(''); // Newline after progress
 
       const processedPRs: PullRequestInfo[] = rawPRs
         .filter((pr) => {
@@ -65,57 +84,73 @@ export const fetchPRsCommand = new Command('fetch-prs')
         })
         .map((pr) => processPR(pr, toDate));
 
-      console.log(chalk.bold(`\nFound ${processedPRs.length} PRs in the specified range:\n`));
+      logInfo(chalk.bold(`\nFound ${processedPRs.length} PRs in the specified range`));
 
-      processedPRs.forEach((pr) => {
-        console.log(chalk.cyan(`#${pr.number} ${pr.title}`));
-        console.log(chalk.gray(`  Link: ${pr.url}`));
-        console.log(chalk.gray(`  Created: ${formatDate(pr.createdAt)}`));
-        console.log(chalk.gray(`  Files Changed: ${pr.changedFiles}`));
-        console.log(
-          chalk.gray(`  Lifetime: ${formatWorkingDuration(pr.lifetimeMs)} (working time)`)
-        );
+      const activities: UserActivity[] = [];
 
-        if (pr.isRequestChanges && pr.requestedChangesBy) {
-          console.log(chalk.red(`  MARKED AS "REQUEST CHANGES":`));
-          console.log(chalk.red(`    By: ${pr.requestedChangesBy.who}`));
-          console.log(chalk.red(`    When: ${formatDate(pr.requestedChangesBy.when)}`));
-        } else {
-          console.log(chalk.green(`  Status: No "Request Changes" active`));
-        }
+      for (const pr of processedPRs) {
+        const repoName = `${options.owner}/${options.repo}`;
 
-        const totalDiscussions = pr.comments.length + pr.reviews.filter((r) => r.body).length;
-        if (totalDiscussions > 0) {
-          console.log(chalk.yellow(`  Discussion Details (${totalDiscussions} items):`));
-
-          // Combine and sort comments/reviews by date
-          const discussion = [
-            ...pr.comments.map((c) => ({ ...c, type: 'Comment' })),
-            ...pr.reviews
-              .filter((r) => r.body)
-              .map((r) => ({
-                who: r.who,
-                when: r.when,
-                text: r.body,
-                type: `Review (${r.state})`,
-              })),
-          ].sort((a, b) => dayjs(a.when).diff(dayjs(b.when)));
-
-          discussion.forEach((item) => {
-            console.log(
-              `    ${chalk.gray(formatDate(item.when))} - ${chalk.blue(item.who)} [${item.type}]:`
-            );
-            const indentedText = item.text
-              .split('\n')
-              .map((line) => `      ${line}`)
-              .join('\n');
-            console.log(chalk.white(indentedText));
+        // PR Created Activity
+        if (dayjs(pr.createdAt).isAfter(fromDate) && dayjs(pr.createdAt).isBefore(toDate)) {
+          activities.push({
+            type: 'pr_created',
+            author: pr.author,
+            date: pr.createdAt,
+            repository: repoName,
+            title: pr.title,
+            url: pr.url,
+            description: `Created PR #${pr.number}`,
+            meta: {
+              prNumber: pr.number,
+              changedFiles: pr.changedFiles,
+              lifetimeMs: pr.lifetimeMs,
+            },
           });
-        } else {
-          console.log(chalk.gray(`  No discussion details found.`));
         }
-        console.log('');
-      });
+
+        // Comments
+        for (const comment of pr.comments) {
+          if (dayjs(comment.when).isAfter(fromDate) && dayjs(comment.when).isBefore(toDate)) {
+            activities.push({
+              type: 'pr_comment',
+              author: comment.who,
+              date: comment.when,
+              repository: repoName,
+              title: pr.title,
+              url: pr.url,
+              description: comment.text,
+              meta: {
+                prNumber: pr.number,
+              },
+            });
+          }
+        }
+
+        // Reviews
+        for (const review of pr.reviews) {
+          if (dayjs(review.when).isAfter(fromDate) && dayjs(review.when).isBefore(toDate)) {
+            activities.push({
+              type: 'pr_review',
+              author: review.who,
+              date: review.when,
+              repository: repoName,
+              title: pr.title,
+              url: pr.url,
+              description: review.body || review.state,
+              meta: {
+                prNumber: pr.number,
+                state: review.state,
+              },
+            });
+          }
+        }
+      }
+
+      // Sort activities
+      activities.sort((a, b) => dayjs(a.date).diff(dayjs(b.date)));
+
+      console.log(JSON.stringify(activities, null, 2));
     } catch (error: unknown) {
       const errorMessage = error instanceof Error ? error.message : 'Unknown error';
       console.error(chalk.red('Error execution failed:'), errorMessage);
@@ -231,6 +266,7 @@ function processPR(pr: PullRequestNode, reportToDate: dayjs.Dayjs): PullRequestI
     createdAt,
     closedAt,
     changedFiles: pr.changedFiles,
+    author: pr.author?.login || 'Unknown',
     reviews,
     comments,
     isRequestChanges,

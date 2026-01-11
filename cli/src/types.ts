@@ -106,6 +106,7 @@ export interface PullRequestInfo {
   createdAt: string;
   closedAt?: string;
   changedFiles: number;
+  author: string;
   reviews: ReviewInfo[];
   comments: CommentInfo[];
   isRequestChanges: boolean;
@@ -282,6 +283,9 @@ export interface PullRequestNode {
   createdAt: string;
   closedAt?: string;
   changedFiles: number;
+  author?: {
+    login: string;
+  };
   comments?: {
     nodes: {
       author?: {
@@ -314,4 +318,26 @@ export interface PullRequestNode {
       body?: string;
     }[];
   };
+}
+
+export type ActivityType =
+  | 'commit'
+  | 'pr_created'
+  | 'pr_review'
+  | 'pr_comment'
+  | 'issue_status_change'
+  | 'issue_assignment'
+  | 'issue_labeling'
+  | 'issue_state_change' // closed/reopened
+  | 'unknown';
+
+export interface UserActivity {
+  type: ActivityType;
+  author: string;
+  date: string;
+  repository: string;
+  url?: string;
+  title?: string;
+  description?: string;
+  meta: Record<string, any>; // Flexible for specific details (lines changed, status from/to, etc)
 }
