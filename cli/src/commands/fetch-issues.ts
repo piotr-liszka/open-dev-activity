@@ -13,6 +13,7 @@ import dayjs from 'dayjs';
 import { getGitHubToken } from '../auth.js';
 import { calculateWorkingTime } from '../core/working-time.js';
 import { logInfo } from '../logger.js';
+import { emitActivities } from '../core/event-bus.js';
 
 export const fetchIssuesCommand = new Command('fetch-issues')
   .description('Fetch issues from a GitHub ProjectV2 with status history and details')
@@ -143,6 +144,9 @@ export const fetchIssuesCommand = new Command('fetch-issues')
 
       // Sort by date
       activities.sort((a, b) => dayjs(a.date).diff(dayjs(b.date)));
+
+      // Emit activities to event bus for persistence
+      await emitActivities(activities);
 
       console.log(JSON.stringify(activities, null, 2));
     } catch (error: unknown) {

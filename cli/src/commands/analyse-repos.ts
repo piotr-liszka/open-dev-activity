@@ -8,6 +8,7 @@ import * as path from 'path';
 import { confirm } from '@inquirer/prompts';
 import type { UserActivity } from '../types.js';
 import { logInfo } from '../logger.js';
+import { emitActivities } from '../core/event-bus.js';
 
 interface CommitAnalysis {
   author: string;
@@ -169,6 +170,9 @@ export const analyseReposCommand = new Command('analyse-repos')
           linesRemoved: commit.linesRemoved,
         },
       }));
+
+      // Emit activities to event bus for persistence
+      await emitActivities(activities);
 
       // Output JSON to stdout
       console.log(JSON.stringify(activities, null, 2));

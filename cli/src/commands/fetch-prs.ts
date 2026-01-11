@@ -12,6 +12,7 @@ import dayjs from 'dayjs';
 import { getGitHubToken } from '../auth.js';
 import { calculateWorkingTime } from '../core/working-time.js';
 import { logInfo } from '../logger.js';
+import { emitActivities } from '../core/event-bus.js';
 
 export const fetchPRsCommand = new Command('fetch-prs')
   .description('Fetch and analyze pull requests from a GitHub repository')
@@ -149,6 +150,9 @@ export const fetchPRsCommand = new Command('fetch-prs')
 
       // Sort activities
       activities.sort((a, b) => dayjs(a.date).diff(dayjs(b.date)));
+
+      // Emit activities to event bus for persistence
+      await emitActivities(activities);
 
       console.log(JSON.stringify(activities, null, 2));
     } catch (error: unknown) {

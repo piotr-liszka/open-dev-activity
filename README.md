@@ -34,55 +34,47 @@ export GITHUB_APP_PRIVATE_KEY_PATH=/path/to/private-key.pem
 
 ## Commands
 
-### 1. Analyze Repository (Fetch Recent Commits)
+### 1. Analyze Repositories (Analyze Local Commits)
 
-Fetch recent commits from all repositories owned by a user or organization.
+Analyze commits from a local repository directory and its forks.
 
 ```bash
-pnpm cli analyze-repo --owner <owner> [options]
+pnpm cli analyse-repos --repo-directory <path> [options]
 ```
 
 **Required Options:**
-- `--owner <string>` - GitHub organization or user
+- `--repo-directory <string>` - Path to the repository directory (or set `REPO_DIRECTORY` env var)
 
 **Optional Options:**
-- `--commits <number>` - Number of recent commits to fetch per repository (default: 10)
-- `--from <date>` - Start date to filter commits (default: "7 days ago")
+- `--from <date>` - Start date to analyze commits (default: "7 days ago")
   - Accepts: "7 days ago", "24 hours ago", "30 days ago", or YYYY-MM-DD format
-- `--include-forks <boolean>` - Include forked repositories (default: true)
-  - Use `--include-forks=false` to exclude forks
-- `--include-merges` - Include merge commits (by default, merge commits are excluded)
+- `--to <date>` - End date to analyze commits (default: "now")
+- `--non-interactive` - Run in non-interactive mode (skip confirmation prompt)
 
 **Example:**
 ```bash
-# Include all repositories (default)
-pnpm cli analyze-repo --owner facebook
+# Analyze a local repository
+pnpm cli analyse-repos --repo-directory /path/to/repo
 
-# Exclude forked repositories
-pnpm cli analyze-repo --owner microsoft --include-forks=false
+# Custom date range
+pnpm cli analyse-repos --repo-directory /path/to/repo --from "30 days ago" --to "now"
 
-# Custom date range and commit count
-pnpm cli analyze-repo --owner myuser --commits 20 --from "30 days ago"
-
-# Include merge commits
-pnpm cli analyze-repo --owner myorg --include-merges
+# Non-interactive mode (for CI/scripts)
+pnpm cli analyse-repos --repo-directory /path/to/repo --non-interactive
 ```
 
 **Output includes:**
 - Summary statistics:
   - Total repositories and commits
   - Lines added/deleted across all commits
-  - Net change in lines of code
-  - Date range
+  - Unique contributors
 - All commits sorted by date (latest first) across all repositories
 - For each commit:
   - Commit SHA, author, and repository name
-  - **Branch information** - Shows which branches contain the commit (e.g., `[main]`, `[develop, staging]`)
   - Lines added (green) and deleted (red)
   - Commit message
   - Commit date
 
-**Note:** Merge commits ("Merge pull request", "Merge branch", "Merge tag") are automatically excluded unless `--include-merges` is specified.
 
 ---
 
