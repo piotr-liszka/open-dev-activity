@@ -1,5 +1,11 @@
 import { graphql } from '@octokit/graphql';
-import type { FetchIssuesOptions, FetchPRsOptions, ProjectV2Item } from './types.js';
+import type {
+  FetchIssuesOptions,
+  FetchPRsOptions,
+  ProjectV2Item,
+  ViewerResponse,
+  PullRequestsResponse
+} from './types.js';
 import dayjs from 'dayjs';
 
 export class GitHubClient {

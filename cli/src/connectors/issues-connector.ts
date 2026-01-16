@@ -51,7 +51,7 @@ export class IssuesConnector extends ActivityConnector {
 
     // Construct filter for GraphQL
     let filter = `updated:>=${fromDate.format('YYYY-MM-DD')}`;
-    if (config.to && config.to !== 'now') {
+    if (toDate && !dayjs.isDayjs(config.to) && config.to !== 'now') {
       filter = `updated:${fromDate.format('YYYY-MM-DD')}..${toDate.format('YYYY-MM-DD')}`;
     }
 

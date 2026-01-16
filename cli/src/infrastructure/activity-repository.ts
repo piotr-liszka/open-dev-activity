@@ -27,18 +27,21 @@ export interface ActivityQueryOptions {
  */
 export function generateActivityKey(activity: UserActivity): string {
   // Use meta.hash for commits, meta.issueNumber for issues, meta.prNumber for PRs
-  const uniqueId = activity.meta?.hash || 
-                   activity.meta?.issueNumber || 
-                   activity.meta?.prNumber || 
+  const uniqueId = activity.meta?.hash ||
+                   activity.meta?.issueNumber ||
+                   activity.meta?.prNumber ||
                    activity.meta?.commentId ||
                    activity.meta?.reviewId ||
-                   activity.url || 
-                   activity.title || 
+                   activity.url ||
+                   activity.title ||
                    'unknown';
-  
+
   // Create a composite key: type:author:date:repository:uniqueId
   const dateStr = new Date(activity.date).toISOString().split('T')[0]; // YYYY-MM-DD
   const timeStr = new Date(activity.date).toISOString().split('T')[1].split('.')[0]; // HH:mm:ss
+
+  // Include milliseconds for better time precision to avoid duplicates
+  const fullTimestamp = new Date(activity.date).toISOString(); // Full ISO timestamp with milliseconds
 
   // For issue activities, include action and a hash of value for uniqueness
   // This prevents conflicts when multiple status changes happen at the same timestamp
@@ -51,25 +54,31 @@ export function generateActivityKey(activity: UserActivity): string {
     actionSuffix = `:${action}${valueHash ? ':' + valueHash : ''}`;
   }
 
-  const key = `${activity.type}:${activity.author}:${dateStr} ${timeStr}:${activity.repository}:${uniqueId}${actionSuffix}`;
+  // Include a hash of the description for additional uniqueness if available
+  let descriptionHash = '';
+  if (activity.description && activity.description.length > 0) {
+    descriptionHash = ':' + createHash('sha256').update(activity.description).digest('hex').substring(0, 8);
+  }
+
+  const key = `${activity.type}:${activity.author}:${fullTimestamp}:${activity.repository}:${uniqueId}${actionSuffix}${descriptionHash}`;
 
   // If key exceeds 500 characters, hash the long parts
   if (key.length > 500) {
     // Keep the essential parts and hash the rest
     const essential = `${activity.type}:${activity.author}:${dateStr} ${timeStr}:${activity.repository}:`;
-    const remaining = `${uniqueId}${actionSuffix}`;
+    const remaining = `${uniqueId}${actionSuffix}${descriptionHash}`;
 
     if (essential.length + remaining.length > 500) {
-      // Hash the uniqueId + actionSuffix if it's too long
+      // Hash the uniqueId + actionSuffix + descriptionHash if it's too long
       const hash = createHash('sha256').update(remaining).digest('hex').substring(0, 32);
       return `${essential}${hash}`;
     }
-    
+
     // Truncate if still too long
     const maxRemaining = 500 - essential.length;
     return `${essential}${remaining.substring(0, maxRemaining)}`;
   }
-  
+
   return key;
 }
 
@@ -203,6 +212,38 @@ export async function saveActivity(activity: UserActivity, uniqueKey?: string): 
 }
 
 /**
+ * Debug function to identify duplicate activities
+ * Helps understand why multiple activities generate the same unique key
+ */
+function debugDuplicateKeys(activitiesWithKeys: Array<{ activity: UserActivity; uniqueKey: string; newActivity: NewActivity }>) {
+  const keyCount = new Map<string, { count: number; activities: UserActivity[] }>();
+
+  // Count occurrences of each unique key
+  for (const item of activitiesWithKeys) {
+    const existing = keyCount.get(item.uniqueKey);
+    if (existing) {
+      existing.count++;
+      existing.activities.push(item.activity);
+    } else {
+      keyCount.set(item.uniqueKey, { count: 1, activities: [item.activity] });
+    }
+  }
+
+  // Log duplicates
+  for (const [uniqueKey, data] of keyCount) {
+    if (data.count > 1) {
+      console.warn(`Duplicate unique key found: ${uniqueKey}`);
+      console.warn(`Activities sharing this key (${data.count} total):`);
+      data.activities.forEach((activity, index) => {
+        console.warn(`  ${index + 1}. Type: ${activity.type}, Author: ${activity.author}, Date: ${activity.date}`);
+        console.warn(`     Repository: ${activity.repository}, Title: ${activity.title?.substring(0, 50)}...`);
+        console.warn(`     Meta: ${JSON.stringify(activity.meta)}`);
+      });
+    }
+  }
+}
+
+/**
  * Save multiple activities in a batch with upsert logic
  * Uses ON CONFLICT to update existing activities
  * Batches large inserts to avoid query size limits
@@ -229,14 +270,44 @@ export async function saveActivities(
     const batch = activitiesList.slice(i, i + BATCH_SIZE);
     
     try {
-      const newActivities = batch.map((activity) => {
+      // First, convert activities to NewActivity objects with their unique keys
+      const activitiesWithKeys = batch.map((activity) => {
         try {
-          return toNewActivity(activity, keyGenerator(activity));
+          const uniqueKey = keyGenerator(activity);
+          return {
+            activity,
+            uniqueKey,
+            newActivity: toNewActivity(activity, uniqueKey)
+          };
         } catch (error) {
           const errorMsg = error instanceof Error ? error.message : 'Unknown validation error';
           throw new Error(`Failed to prepare activity for insertion: ${errorMsg}. Activity: ${JSON.stringify(activity)}`);
         }
       });
+
+      // Deduplicate within the batch by unique key
+      // Keep the last occurrence of each unique key (most recent data)
+      const uniqueActivitiesMap = new Map<string, typeof activitiesWithKeys[0]>();
+      for (const item of activitiesWithKeys) {
+        uniqueActivitiesMap.set(item.uniqueKey, item);
+      }
+
+      const deduplicatedActivities = Array.from(uniqueActivitiesMap.values());
+      const newActivities = deduplicatedActivities.map(item => item.newActivity);
+
+      // Log if we had duplicates within the batch
+      if (deduplicatedActivities.length < activitiesWithKeys.length) {
+        const duplicateCount = activitiesWithKeys.length - deduplicatedActivities.length;
+        console.warn(`Deduplicated ${duplicateCount} activities within batch ${Math.floor(i/BATCH_SIZE) + 1} (had duplicate unique keys)`);
+      }
+
+      // Debugging: Check for duplicate keys
+      debugDuplicateKeys(activitiesWithKeys);
+
+      // Skip empty batches after deduplication
+      if (newActivities.length === 0) {
+        continue;
+      }
 
       // Use PostgreSQL ON CONFLICT for batch upsert
       const results = await db
@@ -277,6 +348,7 @@ export async function saveActivities(
 
   return allIds;
 }
+
 
 /**
  * Build where conditions for activity queries

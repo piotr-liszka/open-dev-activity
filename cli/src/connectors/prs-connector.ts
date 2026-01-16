@@ -56,11 +56,11 @@ export class PRsConnector extends ActivityConnector {
     });
 
     const processedPRs: PullRequestInfo[] = rawPRs
-      .filter((pr) => {
+      .filter((pr: any) => {
         const created = dayjs(pr.createdAt);
         return created.isAfter(fromDate) && created.isBefore(toDate);
       })
-      .map((pr) => processPR(pr, toDate));
+      .map((pr: any) => processPR(pr, toDate));
 
     const activities: UserActivity[] = [];
     const repoName = `${owner}/${repo}`;
