@@ -20,6 +20,9 @@ importers:
       chalk:
         specifier: ^5.6.2
         version: 5.6.2
+      chrono-node:
+        specifier: ^2.9.0
+        version: 2.9.0
       commander:
         specifier: ^14.0.2
         version: 14.0.2
@@ -945,6 +948,10 @@ packages:
 
   chardet@2.1.1:
     resolution: {integrity: sha512-PsezH1rqdV9VvyNhxxOW32/d75r01NY7TQCmOqomRo15ZSOKbpTFVsfjghxo6JloQUCGnH4k1LGu0R4yCLlWQQ==}
+
+  chrono-node@2.9.0:
+    resolution: {integrity: sha512-glI4YY2Jy6JII5l3d5FN6rcrIbKSQqKPhWsIRYPK2IK8Mm4Q1ZZFdYIaDqglUNf7gNwG+kWIzTn0omzzE0VkvQ==}
+    engines: {node: ^12.20.0 || ^14.13.1 || >=16.0.0}
 
   cli-width@4.1.0:
     resolution: {integrity: sha512-ouuZd4/dm2Sw5Gmqy6bGyNNNe1qt9RpmxveLSO7KcgsTnU7RXfsw+/bukWGo1abgBiMAic068rclZsO4IWmmxQ==}
@@ -2245,6 +2252,8 @@ snapshots:
   chalk@5.6.2: {}
 
   chardet@2.1.1: {}
+
+  chrono-node@2.9.0: {}
 
   cli-width@4.1.0: {}
 

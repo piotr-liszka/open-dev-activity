@@ -35,16 +35,36 @@ export GITHUB_APP_PRIVATE_KEY_PATH=/path/to/private-key.pem
 
 ### Database (Optional)
 For activity persistence, configure PostgreSQL:
+
+#### Option 1: Neon (Recommended for Serverless)
+[Neon](https://neon.tech) is a serverless Postgres platform perfect for this project. See [NEON_SETUP.md](./NEON_SETUP.md) for detailed setup instructions.
+
 ```bash
-# Option 1: Connection string
+# Use Neon's pooled connection string (recommended for applications)
+export DATABASE_URL=postgresql://user:password@ep-xxx-xxx.region.aws.neon.tech/dbname?sslmode=require
+
+# Or use direct connection string (for migrations)
+export DATABASE_URL=postgresql://user:password@ep-xxx-xxx.region.aws.neon.tech/dbname?sslmode=require
+```
+
+#### Option 2: Local PostgreSQL
+```bash
+# Connection string
 export DATABASE_URL=postgresql://user:password@localhost:5432/dbname
 
-# Option 2: Individual parameters
+# Or individual parameters
 export POSTGRES_HOST=localhost
 export POSTGRES_PORT=5432
 export POSTGRES_USER=user
 export POSTGRES_PASSWORD=password
 export POSTGRES_DB=dbname
+```
+
+#### Option 3: Docker Compose
+Use the included `docker-compose.yml` to run a local PostgreSQL instance:
+```bash
+docker-compose up -d
+# Then set DATABASE_URL=postgresql://openrag:openrag@localhost:5432/openrag
 ```
 
 ## Commands
@@ -277,10 +297,8 @@ cli/
 │   │   └── query-activities.ts  # Query activities command
 │   ├── core/
 │   │   ├── date-utils.ts        # Date parsing utilities
-│   │   ├── event-bus.ts         # Event bus for activity emission
 │   │   └── working-time.ts      # Working time calculations
 │   ├── infrastructure/
-│   │   ├── activity-handler.ts  # Activity event handler
 │   │   ├── activity-repository.ts # Activity database queries
 │   │   ├── database.ts          # Database connection
 │   │   └── schema.ts            # Drizzle ORM schema
